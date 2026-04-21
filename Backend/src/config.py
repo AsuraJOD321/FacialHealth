@@ -4,10 +4,10 @@ import os
 # Image settings
 IMG_SIZE = 224
 
-# Model paths - Updated to match your actual file names
-SKIN_MODEL_PATH = os.getenv('SKIN_MODEL_PATH', './src/models/skin_model_final.h5')
+# Model paths - Use .keras files
+SKIN_MODEL_PATH = os.getenv('SKIN_MODEL_PATH', './src/models/skin_model_final.keras')
 SKIN_CLASSES_PATH = os.getenv('SKIN_CLASSES_PATH', './src/models/skin_class_names.json')
-EYE_MODEL_PATH = os.getenv('EYE_MODEL_PATH', './src/models/eye_model_final.h5')
+EYE_MODEL_PATH = os.getenv('EYE_MODEL_PATH', './src/models/eye_model_final.keras')
 EYE_CLASSES_PATH = os.getenv('EYE_CLASSES_PATH', './src/models/eye_class_names.json')
 
 # Severity scores for skin conditions

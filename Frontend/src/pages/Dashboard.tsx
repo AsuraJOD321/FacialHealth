@@ -5,10 +5,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getStats, getHistory } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, History, PlusCircle, TrendingUp, BarChart3, Eye, Sparkles, LogOut } from "lucide-react";
+import { Activity, History, PlusCircle, TrendingUp, BarChart3, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { Progress } from "@/components/ui/progress";
-import { toast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -33,7 +32,6 @@ const Dashboard = () => {
         if (error.response?.status === 401) {
           logout();
           navigate("/login");
-          return;
         }
         setStats({ total_analyses: 0, average_health_score: 0 });
         setRecent([]);
@@ -44,14 +42,12 @@ const Dashboard = () => {
 
     if (user) {
       fetchData();
-    } else {
-      navigate("/login");
     }
   }, [user, logout, navigate]);
 
   const handleLogout = async () => {
     await logout();
-    navigate("/login");
+    navigate("/");
   };
 
   if (!user) return null;
@@ -63,14 +59,27 @@ const Dashboard = () => {
     return "text-red-600";
   };
 
+  const getSkinDisplay = (condition: string) => {
+    const map: Record<string, string> = {
+      acne: "Acne",
+      blackheads: "Blackheads",
+      darkspots: "Dark Spots",
+      dry: "Dry Skin",
+      hyperpigmentation: "Hyperpigmentation",
+      normal: "Normal",
+      oily: "Oily Skin"
+    };
+    return map[condition] || condition || "Analysis";
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="font-display text-3xl font-bold mb-2">
+          <h1 className="text-3xl font-bold mb-2">
             Welcome, <span className="text-primary">{user?.full_name?.split(" ")[0] || user?.username}</span>
           </h1>
-          <p className="text-muted-foreground">Here's your facial health overview.</p>
+          <p className="text-muted-foreground">Here's your skin health overview.</p>
         </div>
         <Button variant="outline" onClick={handleLogout} className="gap-2">
           <LogOut className="h-4 w-4" /> Logout
@@ -79,13 +88,13 @@ const Dashboard = () => {
 
       <div className="flex gap-4 mb-8">
         <Link to="/analysis">
-          <Button className="bg-primary text-primary-foreground">
-            <PlusCircle className="h-4 w-4 mr-2" /> New Analysis
+          <Button className="gap-2">
+            <PlusCircle className="h-4 w-4" /> New Analysis
           </Button>
         </Link>
         <Link to="/history">
-          <Button variant="outline">
-            <History className="h-4 w-4 mr-2" /> View History
+          <Button variant="outline" className="gap-2">
+            <History className="h-4 w-4" /> View History
           </Button>
         </Link>
       </div>
@@ -121,7 +130,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      <h2 className="font-display text-xl font-semibold mb-4 flex items-center gap-2">
+      <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
         <Activity className="h-5 w-5" /> Recent Analyses
       </h2>
 
@@ -139,7 +148,7 @@ const Dashboard = () => {
               <Card className="hover:shadow-md transition-shadow cursor-pointer">
                 <CardContent className="p-4 flex justify-between items-center">
                   <div>
-                    <p className="font-medium capitalize">{analysis.skin_prediction || "Analysis"}</p>
+                    <p className="font-medium">{getSkinDisplay(analysis.skin_prediction)}</p>
                     <p className="text-sm text-muted-foreground">{new Date(analysis.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className="text-right">

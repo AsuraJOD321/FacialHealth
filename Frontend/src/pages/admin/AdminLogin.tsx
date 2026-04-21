@@ -24,7 +24,6 @@ const AdminLogin = () => {
     setLoading(true);
     try {
       const res = await adminLogin({ username, password });
-      // Store admin token separately from user token
       localStorage.setItem("admin_token", res.data.token);
       toast({ title: "Admin login successful" });
       navigate("/admin");
@@ -47,7 +46,7 @@ const AdminLogin = () => {
               <Shield className="h-6 w-6 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle className="font-display text-2xl">Admin Panel</CardTitle>
+          <CardTitle className="text-2xl">Admin Panel</CardTitle>
           <CardDescription>Sign in with admin credentials</CardDescription>
         </CardHeader>
         <CardContent>

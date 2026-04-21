@@ -4,8 +4,7 @@ import { Link } from "react-router-dom";
 import { getHistory } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Calendar, Eye, Sparkles } from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowLeft, Calendar, Sparkles } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 const HistoryPage = () => {
@@ -34,6 +33,19 @@ const HistoryPage = () => {
     return "text-red-600";
   };
 
+  const getSkinDisplay = (condition: string) => {
+    const map: Record<string, string> = {
+      acne: "Acne",
+      blackheads: "Blackheads",
+      darkspots: "Dark Spots",
+      dry: "Dry Skin",
+      hyperpigmentation: "Hyperpigmentation",
+      normal: "Normal",
+      oily: "Oily Skin"
+    };
+    return map[condition] || condition || "Normal";
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -50,7 +62,7 @@ const HistoryPage = () => {
         <Link to="/dashboard">
           <Button variant="outline" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
-        <h1 className="font-display text-3xl font-bold">Analysis History</h1>
+        <h1 className="text-3xl font-bold">Analysis History</h1>
       </div>
 
       {history.length === 0 ? (
@@ -68,16 +80,19 @@ const HistoryPage = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <Sparkles className="h-4 w-4 text-primary" />
-                        <span className="font-medium capitalize">Skin: {item.skin_prediction || "N/A"}</span>
+                        <span className="font-medium">Skin: {getSkinDisplay(item.skin_prediction)}</span>
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1"><Eye className="h-3 w-3" /> L: {item.left_eye_prediction || "N/A"}</div>
-                        <div className="flex items-center gap-1"><Eye className="h-3 w-3" /> R: {item.right_eye_prediction || "N/A"}</div>
-                        <div className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {new Date(item.created_at).toLocaleDateString()}</div>
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" /> 
+                          {new Date(item.created_at).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right min-w-[80px]">
-                      <div className={`text-2xl font-bold ${getScoreColor(item.health_score || 0)}`}>{item.health_score || "—"}</div>
+                      <div className={`text-2xl font-bold ${getScoreColor(item.health_score || 0)}`}>
+                        {item.health_score || "—"}
+                      </div>
                       <p className="text-xs text-muted-foreground">Health Score</p>
                     </div>
                   </div>

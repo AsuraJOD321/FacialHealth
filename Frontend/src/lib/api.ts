@@ -21,59 +21,57 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || "";
-      if (!url.includes("/login") && !url.includes("/register") && !url.includes("/health")) {
+      if (!url.includes("/login") && !url.includes("/register")) {
         localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        window.location.href = "/login";
       }
     }
     return Promise.reject(error);
   }
 );
 
-// Auth
-export const registerUser = (data: { username: string; email: string; password: string; full_name?: string }) =>
-  api.post("/register", data);
+const adminApi = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { "Content-Type": "application/json" },
+});
 
-export const loginUser = (data: { username: string; password: string }) =>
-  api.post("/login", data);
+adminApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem("admin_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
+adminApi.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("admin_token");
+      window.location.href = "/admin/login";
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const registerUser = (data: any) => api.post("/register", data);
+export const loginUser = (data: any) => api.post("/login", data);
 export const getMe = () => api.get("/me");
-
 export const logoutUser = () => api.post("/logout");
-
-// Analysis
-export const analyzeImage = (imageBase64: string) =>
-  api.post("/analyze", { image: imageBase64 });
-
-// NEW: Live analysis with face mapping
-export const analyzeLive = (imageBase64: string) =>
-  api.post("/analyze-live", { image: imageBase64 });
-
-export const getHistory = (limit?: number, offset?: number) =>
-  api.get("/history", { params: { limit, offset } });
-
+export const analyzeImage = (imageBase64: string) => api.post("/analyze", { image: imageBase64 });
+export const getHistory = (limit?: number, offset?: number) => api.get("/history", { params: { limit, offset } });
+export const getResult = (id: number) => api.get(`/history/${id}`);
 export const getStats = () => api.get("/stats");
+export const submitFeedback = (data: any) => api.post("/feedback", data);
 
-// Feedback
-export const submitFeedback = (data: { rating: number; comment?: string }) =>
-  api.post("/feedback", data);
-
-// Admin
-export const adminLogin = (data: { username: string; password: string }) =>
-  api.post("/admin/login", data);
-
-export const getAdminStats = () => api.get("/admin/stats");
-
-export const getAdminUsers = () => api.get("/admin/users");
-
-export const getAdminAnalyses = () => api.get("/admin/analyses");
-
-export const getAdminFeedback = () => api.get("/admin/feedback");
-
-export const deleteAdminUser = (id: number) => api.delete(`/admin/users/${id}`);
-
-export const deleteAdminAnalysis = (id: number) => api.delete(`/admin/analyses/${id}`);
-
-export const deleteAdminFeedback = (id: number) => api.delete(`/admin/feedback/${id}`);
+export const adminRegister = (data: any) => adminApi.post("/admin/register", data);
+export const adminLogin = (data: any) => adminApi.post("/admin/login", data);
+export const getAdminStats = () => adminApi.get("/admin/stats");
+export const getAdminUsers = () => adminApi.get("/admin/users");
+export const getAdminAnalyses = () => adminApi.get("/admin/analyses");
+export const getAdminFeedback = () => adminApi.get("/admin/feedback");
+export const deleteAdminUser = (id: number) => adminApi.delete(`/admin/users/${id}`);
+export const deleteAdminAnalysis = (id: number) => adminApi.delete(`/admin/analyses/${id}`);
+export const deleteAdminFeedback = (id: number) => adminApi.delete(`/admin/feedback/${id}`);
 
 export default api;

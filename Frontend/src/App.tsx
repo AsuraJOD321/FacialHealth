@@ -1,8 +1,9 @@
+// src/App.tsx
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import Navbar from "@/components/Navbar";
@@ -24,14 +25,18 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const UserLayout = ({ children }: { children: React.ReactNode }) => (
-  <>
-    <Navbar />
-    {children}
-  </>
-);
+// Layout with navbar for authenticated pages
+const UserLayout = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth();
+  if (!user) return null;
+  return (
+    <>
+      <Navbar />
+      {children}
+    </>
+  );
+};
 
-// Protected Admin Route Component
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -51,11 +56,10 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
         if (response.data.admin) {
           setIsAdmin(true);
         } else {
-          setIsAdmin(false);
           localStorage.removeItem("admin_token");
+          setIsAdmin(false);
         }
       } catch (error) {
-        console.error("Admin auth error:", error);
         localStorage.removeItem("admin_token");
         setIsAdmin(false);
       }
@@ -65,11 +69,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   if (!isAdmin) {
@@ -79,79 +79,69 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const AppRoutes = () => {
+  const { user } = useAuth();
+
+  return (
+    <Routes>
+      {/* Public Routes - Only for non-logged in users */}
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
+      <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
+      
+      {/* Home Page - Shows Landing with features (available to everyone, but with Get Started button) */}
+      <Route path="/" element={<Landing />} />
+      
+      {/* Protected User Routes - Only when logged in */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <UserLayout><Dashboard /></UserLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/analysis" element={
+        <ProtectedRoute>
+          <UserLayout><Analysis /></UserLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/results/:id" element={
+        <ProtectedRoute>
+          <UserLayout><Results /></UserLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/history" element={
+        <ProtectedRoute>
+          <UserLayout><HistoryPage /></UserLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/profile" element={
+        <ProtectedRoute>
+          <UserLayout><Profile /></UserLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/feedback" element={
+        <ProtectedRoute>
+          <UserLayout><Feedback /></UserLayout>
+        </ProtectedRoute>
+      } />
+      
+      {/* Admin Routes */}
+      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+      <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+      
+      {/* 404 Page */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/" element={<UserLayout><Landing /></UserLayout>} />
-            <Route path="/login" element={<UserLayout><Login /></UserLayout>} />
-            <Route path="/register" element={<UserLayout><Register /></UserLayout>} />
-            <Route path="/unauthorized" element={<UserLayout><Unauthorized /></UserLayout>} />
-
-            {/* Protected User Routes */}
-            <Route path="/dashboard" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-            <Route path="/analysis" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <Analysis />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-            <Route path="/results/:id" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <Results />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-            <Route path="/history" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <HistoryPage />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-            <Route path="/profile" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-            <Route path="/feedback" element={
-              <UserLayout>
-                <ProtectedRoute>
-                  <Feedback />
-                </ProtectedRoute>
-              </UserLayout>
-            } />
-
-            {/* Admin Routes */}
-            <Route path="/admin/login" element={<AdminLogin />} />
-            <Route path="/admin" element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            } />
-            <Route path="/admin/dashboard" element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            } />
-
-            {/* 404 Page */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
     </TooltipProvider>
