@@ -1,5 +1,5 @@
 // src/contexts/AuthContext.tsx
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { getMe, loginUser as apiLogin, registerUser as apiRegister, logoutUser as apiLogout } from "@/lib/api";
 
 interface User {
@@ -21,38 +21,30 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [user, setUser]       = useState<User | null>(null);
+  const [token, setToken]     = useState<string | null>(localStorage.getItem("token"));
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadUser = useCallback(async () => {
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
-    try {
-      const res = await getMe();
-      setUser(res.data.user);
-    } catch (error) {
-      console.error("Load user failed:", error);
-      localStorage.removeItem("token");
-      setToken(null);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token]);
-
+  // Run once on mount — restores session from stored token
   useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+    const storedToken = localStorage.getItem("token");
+    if (!storedToken) { setIsLoading(false); return; }
+    getMe()
+      .then((res) => setUser(res.data.user))
+      .catch(() => {
+        localStorage.removeItem("token");
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const login = async (username: string, password: string) => {
     const response = await apiLogin({ username, password });
-    const { token, user } = response.data;
-    localStorage.setItem("token", token);
-    setToken(token);
-    setUser(user);
+    const { token: newToken, user: newUser } = response.data;
+    localStorage.setItem("token", newToken);
+    setToken(newToken);
+    setUser(newUser);
   };
 
   const register = async (data: { username: string; email: string; password: string; full_name?: string }) => {
@@ -61,11 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    try {
-      await apiLogout();
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
+    try { await apiLogout(); } catch {}
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);

@@ -1,221 +1,245 @@
+// src/components/FaceMapper.tsx
 import React, { useRef, useEffect } from 'react';
 
-interface Issue {
-  type: string;
-  condition: string;
+interface Detection {
+  class:      string;
   confidence: number;
-  region: string;
-  bbox: number[];
-  color: string;
-  eye?: string;
+  bbox:       number[];
+}
+
+interface Landmarks {
+  jaw:           number[][];
+  right_eyebrow: number[][];
+  left_eyebrow:  number[][];
+  nose:          number[][];
+  right_eye:     number[][];
+  left_eye:      number[][];
+  mouth:         number[][];
 }
 
 interface FaceMapData {
-  face_box: number[];
-  landmarks: {
-    left_eye: number[][];
-    right_eye: number[][];
-    nose: number[][];
-    mouth: number[][];
-    left_eyebrow: number[][];
-    right_eyebrow: number[][];
-  };
-  issues: Issue[];
+  face_box:   number[];
+  landmarks:  Landmarks | null;
+  detections: Detection[];
 }
 
 interface FaceMapperProps {
-  imageSrc?: string;
-  faceMap: FaceMapData | null;
-  videoRef?: React.RefObject<HTMLVideoElement>;
+  imageSrc?:     string;
+  faceMap:       FaceMapData | null;
+  videoRef?:     React.RefObject<HTMLVideoElement>;
   videoElement?: HTMLVideoElement | null;
 }
 
-const FaceMapper: React.FC<FaceMapperProps> = ({ imageSrc, faceMap, videoRef, videoElement }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-  const animationRef = useRef<number>();
+// Colors per condition (matches websocket.py)
+const CONDITION_COLORS: Record<string, string> = {
+  'Acne':           '#ff2222',
+  'Blackheads':     '#444444',
+  'Dark Spots':     '#7b3fa0',
+  'Dry Skin':       '#c87832',
+  'Enlarged Pores': '#64b4ff',
+  'Eyebags':        '#8c50c8',
+  'Oily Skin':      '#00c8c8',
+  'Skin Redness':   '#ff3200',
+  'Whiteheads':     '#c8c8c8',
+  'Wrinkles':       '#966432',
+};
 
-  const getDisplayName = (condition: string): string => {
-    const names: Record<string, string> = {
-      'acne': '🔴 Acne',
-      'dry': '💧 Dry Skin',
-      'oily': '✨ Oily Skin',
-      'blackheads': '⚫ Blackheads',
-      'darkspots': '🔘 Dark Spots',
-      'hyperpigmentation': '🟤 Hyperpigmentation',
-      'wrinkles': '📐 Fine Lines',
-      'Darkcircle': '🌙 Dark Circles',
-      'Conjunctivitis': '👁️ Red Eye'
-    };
-    return names[condition] || condition;
-  };
+const LANDMARK_COLORS: Record<string, string> = {
+  jaw:           'rgba(180,180,180,0.8)',
+  left_eyebrow:  '#ff9500',
+  right_eyebrow: '#ff9500',
+  nose:          '#00e676',
+  left_eye:      '#ff5050',
+  right_eye:     '#ff5050',
+  mouth:         '#cc00cc',
+};
+
+function drawDots(ctx: CanvasRenderingContext2D, pts: number[][], color: string, r = 2) {
+  ctx.fillStyle = color;
+  pts.forEach(p => {
+    if (p?.length >= 2) {
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+}
+
+function drawLine(ctx: CanvasRenderingContext2D, pts: number[][], color: string, close = false) {
+  if (pts.length < 2) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  if (close) ctx.closePath();
+  ctx.stroke();
+}
+
+const FaceMapper: React.FC<FaceMapperProps> = ({ imageSrc, faceMap, videoRef, videoElement }) => {
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const imgRef      = useRef<HTMLImageElement>(null);
+  const animRef     = useRef<number>();
+  const isVideoMode = Boolean(videoElement || videoRef?.current);
 
   const draw = () => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx    = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    // Get source element
-    let sourceElement: HTMLImageElement | HTMLVideoElement | null = null;
-    let sourceWidth = 0, sourceHeight = 0;
+    let src: HTMLImageElement | HTMLVideoElement | null = null;
+    let sw = 0, sh = 0;
 
     if (videoElement && videoElement.videoWidth > 0) {
-      sourceElement = videoElement;
-      sourceWidth = videoElement.videoWidth;
-      sourceHeight = videoElement.videoHeight;
-    } else if (imgRef.current && imgRef.current.complete) {
-      sourceElement = imgRef.current;
-      sourceWidth = imgRef.current.width;
-      sourceHeight = imgRef.current.height;
+      src = videoElement; sw = videoElement.videoWidth; sh = videoElement.videoHeight;
     } else if (videoRef?.current?.videoWidth) {
-      sourceElement = videoRef.current;
-      sourceWidth = videoRef.current.videoWidth;
-      sourceHeight = videoRef.current.videoHeight;
+      src = videoRef.current; sw = videoRef.current.videoWidth; sh = videoRef.current.videoHeight;
+    } else if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+      src = imgRef.current; sw = imgRef.current.naturalWidth; sh = imgRef.current.naturalHeight;
     }
 
-    if (!sourceElement || sourceWidth === 0) {
-      animationRef.current = requestAnimationFrame(draw);
+    if (!src || sw === 0) {
+      if (isVideoMode) animRef.current = requestAnimationFrame(draw);
       return;
     }
 
-    // Set canvas size
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
-    canvas.style.width = '100%';
+    canvas.width  = sw;
+    canvas.height = sh;
+    canvas.style.width  = '100%';
     canvas.style.height = 'auto';
-
-    // Draw the source image/video frame
-    ctx.drawImage(sourceElement, 0, 0, sourceWidth, sourceHeight);
+    ctx.drawImage(src, 0, 0, sw, sh);
 
     if (!faceMap) {
-      animationRef.current = requestAnimationFrame(draw);
+      if (isVideoMode) animRef.current = requestAnimationFrame(draw);
       return;
     }
 
-    // Draw face bounding box
-    const [fx, fy, fw, fh] = faceMap.face_box;
-    ctx.strokeStyle = '#22c55e';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(fx, fy, fw, fh);
-
-    // Draw landmarks
-    const drawLandmarks = (points: number[][], color: string, radius: number = 3) => {
-      ctx.fillStyle = color;
-      points.forEach(point => {
-        if (point && point.length >= 2) {
-          ctx.beginPath();
-          ctx.arc(point[0], point[1], radius, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      });
-    };
-
-    // Draw all landmarks
-    if (faceMap.landmarks) {
-      drawLandmarks(faceMap.landmarks.left_eye || [], '#3b82f6', 4);
-      drawLandmarks(faceMap.landmarks.right_eye || [], '#3b82f6', 4);
-      drawLandmarks(faceMap.landmarks.nose || [], '#f97316', 4);
-      drawLandmarks(faceMap.landmarks.mouth || [], '#ec4899', 3);
-      drawLandmarks(faceMap.landmarks.left_eyebrow || [], '#a855f7', 3);
-      drawLandmarks(faceMap.landmarks.right_eyebrow || [], '#a855f7', 3);
+    // ── Face bounding box ───────────────────────────────────────────
+    if (faceMap.face_box?.length === 4) {
+      const [fx, fy, fw, fh] = faceMap.face_box;
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth   = 2;
+      ctx.strokeRect(fx, fy, fw, fh);
     }
 
-    // Draw issues
-    if (faceMap.issues && faceMap.issues.length > 0) {
-      faceMap.issues.forEach(issue => {
-        const [ix, iy, iw, ih] = issue.bbox;
-        if (!ix || !iy || !iw || !ih) return;
+    // ── MediaPipe landmarks ─────────────────────────────────────────
+    if (faceMap.landmarks) {
+      const lm = faceMap.landmarks;
 
-        // Draw colored box
-        ctx.strokeStyle = issue.color;
-        ctx.lineWidth = 4;
-        ctx.strokeRect(ix, iy, iw, ih);
+      drawDots(ctx, lm.jaw,           LANDMARK_COLORS.jaw,           1.5);
+      drawDots(ctx, lm.left_eyebrow,  LANDMARK_COLORS.left_eyebrow,  2);
+      drawDots(ctx, lm.right_eyebrow, LANDMARK_COLORS.right_eyebrow, 2);
+      drawLine(ctx, lm.left_eyebrow,  LANDMARK_COLORS.left_eyebrow);
+      drawLine(ctx, lm.right_eyebrow, LANDMARK_COLORS.right_eyebrow);
 
-        // Draw semi-transparent fill
-        ctx.fillStyle = issue.color + '40';
-        ctx.fillRect(ix, iy, iw, ih);
+      drawDots(ctx, lm.nose, LANDMARK_COLORS.nose, 2);
+      drawLine(ctx, lm.nose, LANDMARK_COLORS.nose);
 
-        // Draw label
-        const label = getDisplayName(issue.condition);
-        ctx.font = 'bold 14px sans-serif';
-        const metrics = ctx.measureText(label);
-        const labelWidth = metrics.width + 12;
-        const labelHeight = 24;
+      drawDots(ctx, lm.left_eye,  LANDMARK_COLORS.left_eye,  2);
+      drawDots(ctx, lm.right_eye, LANDMARK_COLORS.right_eye, 2);
+      drawLine(ctx, lm.left_eye,  LANDMARK_COLORS.left_eye,  true);
+      drawLine(ctx, lm.right_eye, LANDMARK_COLORS.right_eye, true);
+
+      drawDots(ctx, lm.mouth, LANDMARK_COLORS.mouth, 2);
+      drawLine(ctx, lm.mouth, LANDMARK_COLORS.mouth, true);
+    }
+
+    // ── YOLO detection boxes ────────────────────────────────────────
+    if (faceMap.detections?.length) {
+      faceMap.detections.forEach(det => {
+        const [bx, by, bw, bh] = det.bbox ?? [];
+        if (!bw || !bh) return;
+
+        // If we have a face_box, offset the detection coords
+        const [fx, fy] = faceMap.face_box?.length === 4
+          ? [faceMap.face_box[0], faceMap.face_box[1]]
+          : [0, 0];
+
+        const x1 = fx + bx;
+        const y1 = fy + by;
+        const x2 = x1 + bw;
+        const y2 = y1 + bh;
+
+        const color = CONDITION_COLORS[det.class] || '#ffff00';
+
+        // Box
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = 2.5;
+        ctx.strokeRect(x1, y1, bw, bh);
+
+        // Semi-transparent fill
+        ctx.fillStyle = color + '22';
+        ctx.fillRect(x1, y1, bw, bh);
 
         // Label background
-        ctx.fillStyle = issue.color;
-        ctx.fillRect(ix, iy - labelHeight, labelWidth, labelHeight);
+        const label = `${det.class} ${Math.round(det.confidence * 100)}%`;
+        ctx.font = 'bold 12px sans-serif';
+        const labelW = ctx.measureText(label).width + 10;
+        ctx.fillStyle = color;
+        ctx.fillRect(x1, y1 - 20, labelW, 20);
 
         // Label text
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, ix + 6, iy - 8);
-
-        // Connecting line
-        ctx.beginPath();
-        ctx.moveTo(ix + iw / 2, iy);
-        ctx.lineTo(ix + iw / 2, iy - labelHeight);
-        ctx.strokeStyle = issue.color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.fillText(label, x1 + 5, y1 - 5);
       });
     }
 
-    // Draw legend
-    const legendX = sourceWidth - 160;
-    const legendY = 20;
+    // ── Legend ──────────────────────────────────────────────────────
+    if (faceMap.landmarks || faceMap.detections?.length) {
+      const legendItems = [
+        { label: 'Eyes',      color: LANDMARK_COLORS.left_eye },
+        { label: 'Eyebrows',  color: LANDMARK_COLORS.left_eyebrow },
+        { label: 'Nose',      color: LANDMARK_COLORS.nose },
+        { label: 'Mouth',     color: LANDMARK_COLORS.mouth },
+        { label: 'Jaw',       color: LANDMARK_COLORS.jaw },
+      ];
+      const lx   = sw - 120;
+      const ly   = 10;
+      const rowH = 18;
+      const boxH = legendItems.length * rowH + 22;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillRect(legendX - 5, legendY - 5, 155, 130);
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(lx - 6, ly, 125, boxH, 6);
+      else ctx.rect(lx - 6, ly, 125, boxH);
+      ctx.fill();
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('Legend', legendX, legendY + 12);
-
-    const conditions = [
-      { name: 'Acne', color: '#ef4444' },
-      { name: 'Dry Skin', color: '#f97316' },
-      { name: 'Oily Skin', color: '#eab308' },
-      { name: 'Dark Circles', color: '#8b5cf6' },
-      { name: 'Red Eye', color: '#ec4899' }
-    ];
-
-    ctx.font = '11px sans-serif';
-    conditions.forEach((cond, i) => {
-      ctx.fillStyle = cond.color;
-      ctx.fillRect(legendX, legendY + 20 + i * 18, 12, 12);
+      ctx.font      = 'bold 11px sans-serif';
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(cond.name, legendX + 18, legendY + 30 + i * 18);
-    });
+      ctx.fillText('Landmarks', lx, ly + 14);
 
-    animationRef.current = requestAnimationFrame(draw);
+      legendItems.forEach((item, i) => {
+        const cy = ly + 22 + i * rowH;
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.arc(lx + 5, cy + 3, 4, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(item.label, lx + 16, cy + 7);
+      });
+    }
+
+    if (isVideoMode) animRef.current = requestAnimationFrame(draw);
   };
 
   useEffect(() => {
-    draw();
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [faceMap, imageSrc, videoElement, videoRef]);
+    if (isVideoMode) {
+      animRef.current = requestAnimationFrame(draw);
+    } else if (imgRef.current) {
+      if (imgRef.current.complete) draw();
+      else imgRef.current.onload = () => draw();
+    }
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, [faceMap, imageSrc, videoElement, videoRef, isVideoMode]);
 
   return (
     <div className="relative">
       {imageSrc && (
-        <img
-          ref={imgRef}
-          src={imageSrc}
-          alt="Face analysis"
-          className="hidden"
-          crossOrigin="anonymous"
-        />
+        <img ref={imgRef} src={imageSrc} alt="Face analysis"
+          className="hidden" crossOrigin="anonymous" />
       )}
-      <canvas
-        ref={canvasRef}
-        className="w-full rounded-lg shadow-lg"
-        style={{ maxHeight: '500px', objectFit: 'contain' }}
-      />
+      <canvas ref={canvasRef} className="w-full rounded-lg shadow-lg" />
     </div>
   );
 };
